@@ -3172,7 +3172,7 @@ compiler_import(struct compiler *c, stmt_ty s)
         ADDOP_LOAD_CONST(c, _PyLong_Zero);
         ADDOP_LOAD_CONST(c, Py_None);
         ADDOP_NAME(c, IMPORT_NAME, alias->name, names);
-
+        
         if (alias->asname) {
             r = compiler_import_as(c, alias->name, alias->asname);
             if (!r)

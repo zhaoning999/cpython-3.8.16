@@ -65,6 +65,9 @@ static PyObject *run_mod(mod_ty, PyObject *, PyObject *, PyObject *,
                           PyCompilerFlags *, PyArena *);
 static PyObject *run_pyc_file(FILE *, PyObject *, PyObject *,
                               PyCompilerFlags *);
+
+static PyObject *run_pyce_file(FILE *, PyObject *, PyObject *,
+                              PyCompilerFlags *);
 static void err_input(perrdetail *);
 static void err_free(perrdetail *);
 static int PyRun_InteractiveOneObjectEx(FILE *, PyObject *, PyCompilerFlags *);
@@ -348,6 +351,21 @@ maybe_pyc_file(FILE *fp, PyObject *filename, int closeit)
     return ispyc;
 }
 
+static int
+maybe_pyce_file(FILE *fp, PyObject *filename, int closeit)
+{
+    PyObject *ext = PyUnicode_FromString(".pyce");
+    if (ext == NULL) {
+        return -1;
+    }
+    Py_ssize_t endswith = PyUnicode_Tailmatch(filename, ext, 0, PY_SSIZE_T_MAX, +1);
+    Py_DECREF(ext);
+    if (endswith) {
+        // printf("read pyce file");
+        return 1;
+    }
+    return 0;
+}
 
 static int
 set_main_loader(PyObject *d, PyObject *filename, const char *loader_name)
@@ -402,6 +420,29 @@ pyrun_simple_file(FILE *fp, PyObject *filename, int closeit,
         }
         set_file_name = 1;
     }
+    int pyce = maybe_pyce_file(fp, filename, closeit);
+    if(pyce) {
+        FILE *pyc_fp;
+        /* Try to run a pyc file. First, re-open in binary */
+        if (closeit) {
+            fclose(fp);
+        }
+
+        pyc_fp = _Py_fopen_obj(filename, "rb");
+        if (pyc_fp == NULL) {
+            fprintf(stderr, "python: Can't reopen .pyc file\n");
+            goto done;
+        }
+
+        if (set_main_loader(d, filename, "SourcelessFileLoader") < 0) {
+            fprintf(stderr, "python: failed to set __main__.__loader__\n");
+            ret = -1;
+            fclose(pyc_fp);
+            goto done;
+        }
+        v = run_pyce_file(pyc_fp, d, d, flags);
+        goto pycedone;
+    }
 
     int pyc = maybe_pyc_file(fp, filename, closeit);
     if (pyc < 0) {
@@ -439,6 +480,7 @@ pyrun_simple_file(FILE *fp, PyObject *filename, int closeit,
         v = pyrun_file(fp, filename, Py_file_input, d, d,
                        closeit, flags);
     }
+pycedone:
     flush_io();
     if (v == NULL) {
         Py_CLEAR(m);
@@ -1214,6 +1256,48 @@ run_pyc_file(FILE *fp, PyObject *globals, PyObject *locals,
         goto error;
     }
     v = PyMarshal_ReadLastObjectFromFile(fp);
+    if (v == NULL || !PyCode_Check(v)) {
+        Py_XDECREF(v);
+        PyErr_SetString(PyExc_RuntimeError,
+                   "Bad code object in .pyc file");
+        goto error;
+    }
+    fclose(fp);
+    co = (PyCodeObject *)v;
+    v = run_eval_code_obj(co, globals, locals);
+    if (v && flags)
+        flags->cf_flags |= (co->co_flags & PyCF_MASK);
+    Py_DECREF(co);
+    return v;
+error:
+    fclose(fp);
+    return NULL;
+}
+
+static PyObject *
+run_pyce_file(FILE *fp, PyObject *globals, PyObject *locals,
+             PyCompilerFlags *flags)
+{
+    PyCodeObject *co;
+    PyObject *v;
+    long magic;
+    long PyImport_GetMagicNumber(void);
+
+    magic = PyMarshal_ReadLongFromFile(fp);
+    if (magic != PyImport_GetMagicNumber()) {
+        if (!PyErr_Occurred())
+            PyErr_SetString(PyExc_RuntimeError,
+                       "Bad magic number in .pyc file");
+        goto error;
+    }
+    /* Skip the rest of the header. */
+    (void) PyMarshal_ReadLongFromFile(fp);
+    (void) PyMarshal_ReadLongFromFile(fp);
+    (void) PyMarshal_ReadLongFromFile(fp);
+    if (PyErr_Occurred()) {
+        goto error;
+    }
+    v = PyMarshal_ReadLastObjectFromEncryptedFile(fp);
     if (v == NULL || !PyCode_Check(v)) {
         Py_XDECREF(v);
         PyErr_SetString(PyExc_RuntimeError,

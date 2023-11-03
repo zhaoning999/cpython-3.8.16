@@ -1654,7 +1654,7 @@ resolve_name(PyObject *name, PyObject *globals, int level)
 static PyObject *
 import_find_and_load(PyObject *abs_name)
 {
-    _Py_IDENTIFIER(_find_and_load);
+        _Py_IDENTIFIER(_find_and_load);
     PyObject *mod = NULL;
     PyInterpreterState *interp = _PyInterpreterState_GET_UNSAFE();
     int import_time = interp->config.import_time;
@@ -1769,7 +1769,7 @@ PyImport_ImportModuleLevelObject(PyObject *name, PyObject *globals,
     if (mod == NULL && PyErr_Occurred()) {
         goto error;
     }
-
+    
     if (mod != NULL && mod != Py_None) {
         _Py_IDENTIFIER(__spec__);
         _Py_IDENTIFIER(_lock_unlock_module);

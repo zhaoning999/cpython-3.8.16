@@ -27,6 +27,7 @@ import _warnings
 import marshal
 
 
+
 _MS_WINDOWS = (sys.platform == 'win32')
 if _MS_WINDOWS:
     import nt as _os
@@ -347,7 +348,7 @@ _OPT = 'opt-'
 
 SOURCE_SUFFIXES = ['.py']  # _setup() adds .pyw as needed.
 
-BYTECODE_SUFFIXES = ['.pyc']
+BYTECODE_SUFFIXES = ['.pyc', '.pyce']
 # Deprecated.
 DEBUG_BYTECODE_SUFFIXES = OPTIMIZED_BYTECODE_SUFFIXES = BYTECODE_SUFFIXES
 
@@ -1121,6 +1122,17 @@ class SourcelessFileLoader(FileLoader, _LoaderBasics):
             'name': fullname,
             'path': path,
         }
+        if path.endswith(".pyce"):
+            with open(path, "rb") as ff:
+                enc_data = ff.read()
+                print(len(enc_data))
+            import aes
+            denc_data = aes.decrypt(enc_data[16:])
+            return _compile_bytecode(
+                denc_data,
+                name=fullname,
+                bytecode_path=path,
+            )
         _classify_pyc(data, fullname, exc_details)
         return _compile_bytecode(
             memoryview(data)[16:],
